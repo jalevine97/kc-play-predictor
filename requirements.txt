@@ -3,4 +3,4 @@ pandas
 xgboost
 numpy
 polars
-sportsdataverse
+sportsdataverse==0.0.37
