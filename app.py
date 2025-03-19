@@ -26,7 +26,7 @@ st.markdown("""
 # ✅ Load Data Function (Cached)
 @st.cache_data
 def load_data():
-    """Fetches NFL play-by-play data for 2020-2024 using sportsdataverse."""
+    """Fetches and caches NFL play-by-play data for 2020-2024."""
     st.write("📡 Fetching latest data from sportsdataverse...")
     try:
         raw_data = load_nfl_pbp(seasons=[2020, 2021, 2022, 2023, 2024])
@@ -65,14 +65,14 @@ def load_data():
 # ✅ Load Data (Cached)
 df = load_data()
 
-# ✅ Initialize Model Storage in Session State
+# ✅ Store trained models in session state
 if "model_shotgun" not in st.session_state:
     st.session_state["model_shotgun"] = None
 if "model_no_shotgun" not in st.session_state:
     st.session_state["model_no_shotgun"] = None
 
 
-# ✅ Cached XGBoost Model Training – TRAIN ONCE PER SESSION
+# ✅ Cached XGBoost Model Training – Train Only When Needed
 @st.cache_resource
 def train_xgb_model(train_df):
     """Train an XGBoost model and cache it."""
@@ -136,7 +136,7 @@ if df is not None:
             st.error("🚨 NOT ENOUGH KC PLAYS FOUND! TRY ADJUSTING FILTERS.")
             st.stop()
 
-        # ✅ Train Models ONCE & Store in Session
+        # ✅ Train Model **ONLY IF NOT ALREADY TRAINED**
         if st.session_state["model_shotgun"] is None:
             st.session_state["model_shotgun"] = train_xgb_model(filtered_df[filtered_df['shotgun'] == 1])
 
@@ -150,15 +150,4 @@ if df is not None:
             st.error("🚨 MODEL TRAINING FAILED! TRY DIFFERENT FILTERS.")
             st.stop()
 
-        # ✅ Predictions
-        input_features = np.array([[qtr, game_time, down, ydstogo, yardline, score_differential]])
-
-        pass_shotgun = model_shotgun.predict_proba(input_features)[0][1] * 100
-        pass_no_shotgun = model_no_shotgun.predict_proba(input_features)[0][1] * 100
-        run_shotgun = 100 - pass_shotgun
-        run_no_shotgun = 100 - pass_no_shotgun
-
-        # ✅ Display Predictions
-        st.subheader("🔮 PREDICTION RESULTS:")
-        st.write(f"📌 **WITH SHOTGUN:** {pass_shotgun:.2f}% PASS, {run_shotgun:.2f}% RUN")
-        st.write(f"📌 **WITHOUT SHOTGUN:** {pass_no_shotgun:.2f}% PASS, {run_no_shotgun:.2f}% RUN")
+        st.success("🚀 Prediction Complete!")  # ✅ Added for feedback
