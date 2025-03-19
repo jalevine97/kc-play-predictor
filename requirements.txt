@@ -1,7 +1,17 @@
-scikit-learn
-xgboost
+# Essential Packages
+streamlit
 pandas
-numpy
+xgboost
 polars
 sportsdataverse
-streamlit
+scikit-learn
+setuptools
+numpy
+matplotlib
+seaborn
+requests
+scipy
+tqdm
+
+# Force Upgrade All Dependencies
+--upgrade
