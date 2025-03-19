@@ -16,10 +16,42 @@ KC_2024_SCHEDULE = {
 # ✅ Custom CSS for Theming
 st.markdown("""
     <style>
-        [data-testid="stSidebar"] { background-color: white !important; color: #00529B !important; }
-        div[data-baseweb="select"] { border: 1px solid #00529B !important; border-radius: 5px !important; }
-        .stSlider > div > div { color: #00529B !important; }
-        html, body, [class*="css"] { font-family: Arial, sans-serif; }
+        /* Global Font and Colors */
+        html, body, [class*="css"] {
+            font-family: 'Proxima Sans', sans-serif !important;
+            color: #01284a !important;
+        }
+
+        /* Capitalize All Headers */
+        h1, h2, h3, h4, h5, h6 {
+            text-transform: uppercase !important;
+            font-weight: bold !important;
+            color: #01284a !important;
+        }
+
+        /* Dropdown Borders */
+        div[data-baseweb="select"] {
+            border: 1px solid #01284a !important;
+            border-radius: 5px !important;
+        }
+
+        /* Sidebar Background */
+        [data-testid="stSidebar"] {
+            background-color: white !important;
+            color: #01284a !important;
+        }
+
+        /* Slider Track */
+        .stSlider > div > div {
+            color: #01284a !important;
+        }
+
+        /* Buttons */
+        .stButton>button {
+            background-color: #01284a !important;
+            color: white !important;
+            border-radius: 5px !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -54,10 +86,6 @@ def load_data():
         # Weight 2024 plays more heavily
         df_2024 = df[df['season'] == 2024]
         df = pd.concat([df, df_2024, df_2024, df_2024], ignore_index=True)
-
-        # Debugging - Check play count by opponent
-        opponent_counts = df['defteam'].value_counts().to_dict()
-        st.write("🔍 KC Play Count by Opponent:", opponent_counts)
 
         st.write(f"✅ Successfully loaded {len(df)} plays for KC from 2020-2024.")
         return df
@@ -97,6 +125,7 @@ if df is not None:
     if st.sidebar.button("🔍 Get Prediction"):
         game_time = (minutes * 60) + seconds
 
+        # **Expand KC-Specific Data** if needed
         filtered_df = df[
             (df['qtr'] == qtr) &
             (df['down'] == down) &
@@ -106,11 +135,11 @@ if df is not None:
             (df['score_differential'].between(score_differential - 10, score_differential + 10))
         ]
 
-        st.write(f"✅ Final KC Play Count: {len(filtered_df)}")
-
         if len(filtered_df) < 10:
-            st.error("🚨 Not enough KC plays found! Try adjusting filters.")
-            st.stop()
+            st.warning("⚠️ Not enough data. Expanding to all KC plays...")
+            filtered_df = df[df['qtr'] == qtr]
+
+        st.write(f"✅ Final KC Play Count: {len(filtered_df)}")
 
         # ✅ Train XGBoost Model
         def train_xgb_model(df, shotgun):
@@ -132,15 +161,8 @@ if df is not None:
             st.error("🚨 Model training failed! Try different filters.")
             st.stop()
 
-        # ✅ Debugging Logs
-        st.write("📊 Model Training Completed!")
-        st.write("🔎 Model Shotgun Exists:", model_shotgun is not None)
-        st.write("🔎 Model No-Shotgun Exists:", model_no_shotgun is not None)
-
         # ✅ Predictions
         input_features = np.array([[qtr, game_time, down, ydstogo, yardline, score_differential]])
-        st.write("📊 Model Input Features:", input_features)
-
         prediction_shotgun = model_shotgun.predict_proba(input_features)[0][1] * 100
         prediction_no_shotgun = model_no_shotgun.predict_proba(input_features)[0][1] * 100
 
@@ -148,6 +170,6 @@ if df is not None:
         run_no_shotgun = 100 - prediction_no_shotgun
 
         # ✅ Display Predictions
-        st.subheader("🔮 Prediction Results:")
+        st.subheader("🔮 PREDICTION RESULTS")
         st.write(f"📌 **With Shotgun:** {prediction_shotgun:.2f}% Pass, {run_shotgun:.2f}% Run")
         st.write(f"📌 **Without Shotgun:** {prediction_no_shotgun:.2f}% Pass, {run_no_shotgun:.2f}% Run")
