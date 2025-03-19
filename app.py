@@ -16,12 +16,13 @@ KC_2024_SCHEDULE = {
 # ✅ Custom CSS for Theming
 st.markdown("""
     <style>
-        [data-testid="stSidebar"] { background-color: white !important; color: #00529B !important; }
-        div[data-baseweb="select"] { border: 1px solid #00529B !important; border-radius: 5px !important; }
-        .stSlider > div > div { color: #00529B !important; }
-        html, body, [class*="css"] { font-family: Arial, sans-serif; }
+        [data-testid="stSidebar"] { background-color: white !important; color: #01284a !important; }
+        div[data-baseweb="select"] { border: 1px solid #01284a !important; border-radius: 5px !important; }
+        .stSlider > div > div { color: #01284a !important; }
+        html, body, [class*="css"] { font-family: 'proxima-sans', sans-serif; }
     </style>
 """, unsafe_allow_html=True)
+
 
 # ✅ Load Data Function (Cached)
 @st.cache_data
@@ -45,7 +46,7 @@ def load_data():
         for col in ['qtr', 'shotgun', 'game_seconds_remaining', 'ydstogo', 'yardline_100', 'score_differential']:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
 
-        # Encode play_type
+        # Encode play_type (Pass = 1, Run = 0)
         df['play_type_encoded'] = df['play_type'].apply(lambda x: 1 if x == "pass" else 0)
 
         # Filter for KC offensive plays ONLY
@@ -64,6 +65,22 @@ def load_data():
 
 # ✅ Load Data (Cached)
 df = load_data()
+
+# ✅ Caching XGBoost Model Training
+@st.cache_resource
+def train_xgb_model(df, shotgun):
+    """Train XGBoost model and cache the trained model."""
+    train_df = df[df['shotgun'] == shotgun]
+    X = train_df[['qtr', 'game_seconds_remaining', 'down', 'ydstogo', 'yardline_100', 'score_differential']]
+    y = train_df['play_type_encoded']
+
+    if len(y.unique()) < 2:
+        return None
+
+    model = xgb.XGBClassifier(eval_metric="logloss", use_label_encoder=False)
+    model.fit(X, y)
+    return model
+
 
 if df is not None:
     # ✅ Sidebar Layout
@@ -93,20 +110,17 @@ if df is not None:
     if st.sidebar.button("🔍 GET PREDICTION"):
         game_time = (minutes * 60) + seconds
 
-        # **Dynamic Search Expansion**
-        expansion_steps = [(5, 300, 5), (10, 600, 10), (15, 900, 15)]
-        for yards, time_adj, score_adj in expansion_steps:
-            filtered_df = df[
-                (df['qtr'] == qtr) &
-                (df['down'] == down) &
-                (df['game_seconds_remaining'].between(game_time - time_adj, game_time + time_adj)) &
-                (df['ydstogo'].between(ydstogo - yards, ydstogo + yards)) &
-                (df['yardline_100'].between(yardline - yards, yardline + yards)) &
-                (df['score_differential'].between(score_differential - score_adj, score_differential + score_adj))
-            ]
+        # **Field Position Adjustments**
+        field_tolerance = 5 if yardline >= 80 else 15
 
-            if len(filtered_df) >= 20:  # Stop expanding if enough plays are found
-                break
+        filtered_df = df[
+            (df['qtr'] == qtr) &
+            (df['down'] == down) &
+            (df['game_seconds_remaining'].between(game_time - 600, game_time + 600)) &
+            (df['ydstogo'].between(ydstogo - 10, ydstogo + 10)) &
+            (df['yardline_100'].between(yardline - field_tolerance, yardline + field_tolerance)) &
+            (df['score_differential'].between(score_differential - 10, score_differential + 10))
+        ]
 
         st.write(f"✅ FINAL KC PLAY COUNT: {len(filtered_df)}")
 
@@ -114,19 +128,7 @@ if df is not None:
             st.error("🚨 NOT ENOUGH KC PLAYS FOUND! TRY ADJUSTING FILTERS.")
             st.stop()
 
-        # ✅ Train XGBoost Model
-        def train_xgb_model(df, shotgun):
-            train_df = df[df['shotgun'] == shotgun]
-            X = train_df[['qtr', 'game_seconds_remaining', 'down', 'ydstogo', 'yardline_100', 'score_differential']]
-            y = train_df['play_type_encoded']
-
-            if len(y.unique()) < 2:
-                return None
-
-            model = xgb.XGBClassifier(eval_metric="logloss")
-            model.fit(X, y)
-            return model
-
+        # ✅ Use Cached Models
         model_shotgun = train_xgb_model(filtered_df, shotgun=1)
         model_no_shotgun = train_xgb_model(filtered_df, shotgun=0)
 
