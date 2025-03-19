@@ -4,3 +4,4 @@ xgboost==3.0.0
 numpy
 polars==1.25.2
 sportsdataverse==0.0.38
+Scikit-learn
