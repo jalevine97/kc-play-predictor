@@ -1,6 +1,6 @@
 streamlit
-pandas
-xgboost
+pandas==2.2.3
+xgboost==3.0.0
 numpy
-polars
-sportsdataverse==0.0.37
+polars==1.25.2
+sportsdataverse==0.0.38
