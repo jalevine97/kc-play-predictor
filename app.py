@@ -97,7 +97,6 @@ if df is not None:
     if st.sidebar.button("🔍 Get Prediction"):
         game_time = (minutes * 60) + seconds
 
-        # **Filtering Logic**
         filtered_df = df[
             (df['qtr'] == qtr) &
             (df['down'] == down) &
@@ -113,15 +112,7 @@ if df is not None:
             st.error("🚨 Not enough KC plays found! Try adjusting filters.")
             st.stop()
 
-        # **Ensure Play Type Variation**
-        pass_count = sum(filtered_df['play_type_encoded'] == 1)
-        run_count = sum(filtered_df['play_type_encoded'] == 0)
-
-        if pass_count < 5 or run_count < 5:
-            st.warning("⚠️ Not enough pass/run variation. Expanding search...")
-            filtered_df = df[df['qtr'] == qtr]  # Expand search by quarter
-
-        # **Train XGBoost Model**
+        # ✅ Train XGBoost Model
         def train_xgb_model(df, shotgun):
             train_df = df[df['shotgun'] == shotgun]
             X = train_df[['qtr', 'game_seconds_remaining', 'down', 'ydstogo', 'yardline_100', 'score_differential']]
@@ -138,18 +129,17 @@ if df is not None:
         model_no_shotgun = train_xgb_model(filtered_df, shotgun=0)
 
         if model_shotgun is None or model_no_shotgun is None:
-            st.error("🚨 Not enough variation in play types. Expanding to historical KC data...")
-            filtered_df = df[df['qtr'] == qtr]  # Expand to historical KC data
+            st.error("🚨 Model training failed! Try different filters.")
+            st.stop()
 
-            model_shotgun = train_xgb_model(filtered_df, shotgun=1)
-            model_no_shotgun = train_xgb_model(filtered_df, shotgun=0)
+        # ✅ Debugging Logs
+        st.write("📊 Model Training Completed!")
+        st.write("🔎 Model Shotgun Exists:", model_shotgun is not None)
+        st.write("🔎 Model No-Shotgun Exists:", model_no_shotgun is not None)
 
-            if model_shotgun is None or model_no_shotgun is None:
-                st.error("🚨 Still not enough data. Try different filters.")
-                st.stop()
-
-        # **Generate Predictions**
+        # ✅ Predictions
         input_features = np.array([[qtr, game_time, down, ydstogo, yardline, score_differential]])
+        st.write("📊 Model Input Features:", input_features)
 
         prediction_shotgun = model_shotgun.predict_proba(input_features)[0][1] * 100
         prediction_no_shotgun = model_no_shotgun.predict_proba(input_features)[0][1] * 100
@@ -157,7 +147,7 @@ if df is not None:
         run_shotgun = 100 - prediction_shotgun
         run_no_shotgun = 100 - prediction_no_shotgun
 
-        # **Display Predictions**
+        # ✅ Display Predictions
         st.subheader("🔮 Prediction Results:")
-        st.write(f"📌 **With Shotgun Formation:** {prediction_shotgun:.2f}% **Pass**, {run_shotgun:.2f}% **Run**")
-        st.write(f"📌 **Without Shotgun Formation:** {prediction_no_shotgun:.2f}% **Pass**, {run_no_shotgun:.2f}% **Run**")
+        st.write(f"📌 **With Shotgun:** {prediction_shotgun:.2f}% Pass, {run_shotgun:.2f}% Run")
+        st.write(f"📌 **Without Shotgun:** {prediction_no_shotgun:.2f}% Pass, {run_no_shotgun:.2f}% Run")
