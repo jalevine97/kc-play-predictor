@@ -66,11 +66,14 @@ def load_data():
 # ✅ Load Data (Cached)
 df = load_data()
 
-# ✅ Caching XGBoost Model Training
+
+# ✅ Caching XGBoost Model Training – TRAIN ONCE PER SESSION
 @st.cache_resource
-def train_xgb_model(df, shotgun):
-    """Train XGBoost model and cache the trained model."""
-    train_df = df[df['shotgun'] == shotgun]
+def train_xgb_model(train_df):
+    """Train an XGBoost model and cache it."""
+    if len(train_df) < 10:
+        return None
+
     X = train_df[['qtr', 'game_seconds_remaining', 'down', 'ydstogo', 'yardline_100', 'score_differential']]
     y = train_df['play_type_encoded']
 
@@ -128,9 +131,9 @@ if df is not None:
             st.error("🚨 NOT ENOUGH KC PLAYS FOUND! TRY ADJUSTING FILTERS.")
             st.stop()
 
-        # ✅ Use Cached Models
-        model_shotgun = train_xgb_model(filtered_df, shotgun=1)
-        model_no_shotgun = train_xgb_model(filtered_df, shotgun=0)
+        # ✅ Train Models ONCE for Shotgun & No-Shotgun
+        model_shotgun = train_xgb_model(filtered_df[filtered_df['shotgun'] == 1])
+        model_no_shotgun = train_xgb_model(filtered_df[filtered_df['shotgun'] == 0])
 
         if model_shotgun is None or model_no_shotgun is None:
             st.error("🚨 MODEL TRAINING FAILED! TRY DIFFERENT FILTERS.")
@@ -138,7 +141,6 @@ if df is not None:
 
         # ✅ Predictions
         input_features = np.array([[qtr, game_time, down, ydstogo, yardline, score_differential]])
-
         prediction_shotgun = model_shotgun.predict_proba(input_features)[0][1] * 100
         prediction_no_shotgun = model_no_shotgun.predict_proba(input_features)[0][1] * 100
 
