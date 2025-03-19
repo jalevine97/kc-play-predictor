@@ -12,6 +12,4 @@ seaborn
 requests
 scipy
 tqdm
-
-# Force Upgrade All Dependencies
---upgrade
+scikit-learn
