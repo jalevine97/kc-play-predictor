@@ -55,10 +55,6 @@ def load_data():
         df_2024 = df[df['season'] == 2024]
         df = pd.concat([df, df_2024, df_2024, df_2024], ignore_index=True)
 
-        # Debugging - Check play count by opponent
-        opponent_counts = df['defteam'].value_counts().to_dict()
-        st.write("🔍 KC Play Count by Opponent:", opponent_counts)
-
         st.write(f"✅ Successfully loaded {len(df)} plays for KC from 2020-2024.")
         return df
 
@@ -73,43 +69,49 @@ if df is not None:
     # ✅ Sidebar Layout
     with st.sidebar:
         st.image("Eaglelogo2color.jpg", width=250)
-        st.title("📊 Play Predictor - KC Chiefs")
+        st.title("📊 PLAY PREDICTOR - KC CHIEFS")
 
         # 🏆 Select Week & Opponent
-        week = st.selectbox("Select Game Week", list(KC_2024_SCHEDULE.keys()), index=7)
+        week = st.selectbox("SELECT GAME WEEK", list(KC_2024_SCHEDULE.keys()), index=7)
         opponent = KC_2024_SCHEDULE[week]
 
         if opponent == "BYE":
-            st.warning("🚨 Kansas City has a BYE in Week 6. Select another week.")
+            st.warning("🚨 KANSAS CITY HAS A BYE IN WEEK 6. SELECT ANOTHER WEEK.")
         else:
-            st.markdown(f"### 🏈 Opponent: **{opponent}**")
+            st.markdown(f"### 🏈 OPPONENT: **{opponent}**")
 
             # 🏈 Game Situation Inputs
-            qtr = st.selectbox("Select Quarter", [1, 2, 3, 4], index=2)
-            minutes = st.selectbox("Minutes Remaining", list(range(15, -1, -1)), index=1)
-            seconds = st.slider("Seconds Remaining", min_value=0, max_value=59, value=14)
-            down = st.selectbox("Down", [1, 2, 3, 4], index=0)
-            ydstogo = st.slider("Yards to Go", min_value=1, max_value=30, value=10)
-            yardline = st.slider("Field Position (0-50 KC Side, 50-100 Opponent Side)", 1, 99, 20)
-            score_differential = st.slider("Score Differential (KC - Opponent)", -30, 30, 4)
+            qtr = st.selectbox("SELECT QUARTER", [1, 2, 3, 4], index=2)
+            minutes = st.selectbox("MINUTES REMAINING", list(range(15, -1, -1)), index=1)
+            seconds = st.slider("SECONDS REMAINING", min_value=0, max_value=59, value=14)
+            down = st.selectbox("DOWN", [1, 2, 3, 4], index=0)
+            ydstogo = st.slider("YARDS TO GO", min_value=1, max_value=30, value=10)
+            yardline = st.slider("FIELD POSITION (0-50 KC SIDE, 50-100 OPPONENT SIDE)", 1, 99, 20)
+            score_differential = st.slider("SCORE DIFFERENTIAL (KC - OPPONENT)", -30, 30, 4)
 
     # ✅ Button to Trigger Prediction
-    if st.sidebar.button("🔍 Get Prediction"):
+    if st.sidebar.button("🔍 GET PREDICTION"):
         game_time = (minutes * 60) + seconds
 
-        filtered_df = df[
-            (df['qtr'] == qtr) &
-            (df['down'] == down) &
-            (df['game_seconds_remaining'].between(game_time - 1200, game_time + 1200)) &
-            (df['ydstogo'].between(ydstogo - 10, ydstogo + 10)) &
-            (df['yardline_100'].between(yardline - 10, yardline + 10)) &
-            (df['score_differential'].between(score_differential - 10, score_differential + 10))
-        ]
+        # **Dynamic Search Expansion**
+        expansion_steps = [(5, 300, 5), (10, 600, 10), (15, 900, 15)]
+        for yards, time_adj, score_adj in expansion_steps:
+            filtered_df = df[
+                (df['qtr'] == qtr) &
+                (df['down'] == down) &
+                (df['game_seconds_remaining'].between(game_time - time_adj, game_time + time_adj)) &
+                (df['ydstogo'].between(ydstogo - yards, ydstogo + yards)) &
+                (df['yardline_100'].between(yardline - yards, yardline + yards)) &
+                (df['score_differential'].between(score_differential - score_adj, score_differential + score_adj))
+            ]
 
-        st.write(f"✅ Final KC Play Count: {len(filtered_df)}")
+            if len(filtered_df) >= 20:  # Stop expanding if enough plays are found
+                break
+
+        st.write(f"✅ FINAL KC PLAY COUNT: {len(filtered_df)}")
 
         if len(filtered_df) < 10:
-            st.error("🚨 Not enough KC plays found! Try adjusting filters.")
+            st.error("🚨 NOT ENOUGH KC PLAYS FOUND! TRY ADJUSTING FILTERS.")
             st.stop()
 
         # ✅ Train XGBoost Model
@@ -129,17 +131,11 @@ if df is not None:
         model_no_shotgun = train_xgb_model(filtered_df, shotgun=0)
 
         if model_shotgun is None or model_no_shotgun is None:
-            st.error("🚨 Model training failed! Try different filters.")
+            st.error("🚨 MODEL TRAINING FAILED! TRY DIFFERENT FILTERS.")
             st.stop()
-
-        # ✅ Debugging Logs
-        st.write("📊 Model Training Completed!")
-        st.write("🔎 Model Shotgun Exists:", model_shotgun is not None)
-        st.write("🔎 Model No-Shotgun Exists:", model_no_shotgun is not None)
 
         # ✅ Predictions
         input_features = np.array([[qtr, game_time, down, ydstogo, yardline, score_differential]])
-        st.write("📊 Model Input Features:", input_features)
 
         prediction_shotgun = model_shotgun.predict_proba(input_features)[0][1] * 100
         prediction_no_shotgun = model_no_shotgun.predict_proba(input_features)[0][1] * 100
@@ -148,6 +144,6 @@ if df is not None:
         run_no_shotgun = 100 - prediction_no_shotgun
 
         # ✅ Display Predictions
-        st.subheader("🔮 Prediction Results:")
-        st.write(f"📌 **With Shotgun:** {prediction_shotgun:.2f}% Pass, {run_shotgun:.2f}% Run")
-        st.write(f"📌 **Without Shotgun:** {prediction_no_shotgun:.2f}% Pass, {run_no_shotgun:.2f}% Run")
+        st.subheader("🔮 PREDICTION RESULTS:")
+        st.write(f"📌 **WITH SHOTGUN:** {prediction_shotgun:.2f}% PASS, {run_shotgun:.2f}% RUN")
+        st.write(f"📌 **WITHOUT SHOTGUN:** {prediction_no_shotgun:.2f}% PASS, {run_no_shotgun:.2f}% RUN")
