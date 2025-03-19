@@ -59,3 +59,4 @@ tzdata==2025.1
 urllib3==2.3.0
 xarray==2025.1.2
 xgboost==3.0.0
+setuptools
