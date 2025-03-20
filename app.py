@@ -19,15 +19,15 @@ st.markdown("""
         [data-testid="stSidebar"] { background-color: white !important; color: #01284a !important; }
         div[data-baseweb="select"] { border: 1px solid #01284a !important; border-radius: 5px !important; }
         .stSlider > div > div { color: #01284a !important; }
-        html, body, [class*="css"] { font-family: 'proxima-sans', sans-serif; }
+        html, body, [class*="css"] { font-family: 'Proxima Nova', sans-serif; }
     </style>
 """, unsafe_allow_html=True)
 
 # ✅ Load Data Function (Cached)
 @st.cache_data
 def load_data():
-    """Fetches and caches NFL play-by-play data for 2020-2024."""
-    st.write("📡 Fetching latest data from sportsdataverse...")
+    """Fetches and processes KC-specific play-by-play data for 2020-2024."""
+    st.write("📡 Fetching latest KC play data...")
     try:
         raw_data = load_nfl_pbp(seasons=[2020, 2021, 2022, 2023, 2024])
         df = raw_data.to_pandas() if isinstance(raw_data, pl.DataFrame) else None
@@ -42,10 +42,10 @@ def load_data():
         df = df[cols].dropna()
 
         # Convert types
-        for col in ['qtr', 'shotgun', 'game_seconds_remaining', 'ydstogo', 'yardline_100', 'score_differential']:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        numeric_cols = ['qtr', 'shotgun', 'game_seconds_remaining', 'ydstogo', 'yardline_100', 'score_differential']
+        df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce').fillna(0).astype(int)
 
-        # Encode play_type (Pass = 1, Run = 0)
+        # Encode play_type
         df['play_type_encoded'] = df['play_type'].apply(lambda x: 1 if x == "pass" else 0)
 
         # Filter for KC offensive plays ONLY
@@ -55,7 +55,7 @@ def load_data():
         df_2024 = df[df['season'] == 2024]
         df = pd.concat([df, df_2024, df_2024, df_2024], ignore_index=True)
 
-        st.write(f"✅ Successfully loaded {len(df)} plays for KC from 2020-2024.")
+        st.write(f"✅ Successfully loaded {len(df)} KC plays from 2020-2024.")
         return df
 
     except Exception as e:
@@ -65,33 +65,23 @@ def load_data():
 # ✅ Load Data (Cached)
 df = load_data()
 
-# ✅ Store trained models in session state
-if "model_shotgun" not in st.session_state:
-    st.session_state["model_shotgun"] = None
-if "model_no_shotgun" not in st.session_state:
-    st.session_state["model_no_shotgun"] = None
-
-
-# ✅ Cached XGBoost Model Training – Train Only When Needed
+# ✅ Cache the trained models
 @st.cache_resource
-def train_xgb_model(train_df):
-    """Train an XGBoost model and cache it."""
-    if len(train_df) < 10:
-        return None
-
-    X = train_df[['qtr', 'game_seconds_remaining', 'down', 'ydstogo', 'yardline_100', 'score_differential']]
-    y = train_df['play_type_encoded']
+def train_xgb_model(train_df, shotgun):
+    """Trains and caches an XGBoost model for a given shotgun status."""
+    subset = train_df[train_df['shotgun'] == shotgun]
+    X = subset[['qtr', 'game_seconds_remaining', 'down', 'ydstogo', 'yardline_100', 'score_differential']]
+    y = subset['play_type_encoded']
 
     if len(y.unique()) < 2:
-        return None
+        return None  # Not enough variation to train
 
-    model = xgb.XGBClassifier(eval_metric="logloss", use_label_encoder=False)
+    model = xgb.XGBClassifier(eval_metric="logloss")
     model.fit(X, y)
     return model
 
-
+# ✅ Sidebar Layout
 if df is not None:
-    # ✅ Sidebar Layout
     with st.sidebar:
         st.image("Eaglelogo2color.jpg", width=250)
         st.title("📊 PLAY PREDICTOR - KC CHIEFS")
@@ -118,17 +108,20 @@ if df is not None:
     if st.sidebar.button("🔍 GET PREDICTION"):
         game_time = (minutes * 60) + seconds
 
-        # **Field Position Adjustments**
-        field_tolerance = 5 if yardline >= 80 else 15
+        # **Dynamic Search Expansion**
+        expansion_steps = [(5, 300, 5), (10, 600, 10), (15, 900, 15)]
+        for yards, time_adj, score_adj in expansion_steps:
+            filtered_df = df[
+                (df['qtr'] == qtr) &
+                (df['down'] == down) &
+                (df['game_seconds_remaining'].between(game_time - time_adj, game_time + time_adj)) &
+                (df['ydstogo'].between(ydstogo - yards, ydstogo + yards)) &
+                (df['yardline_100'].between(yardline - yards, yardline + yards)) &
+                (df['score_differential'].between(score_differential - score_adj, score_differential + score_adj))
+            ]
 
-        filtered_df = df[
-            (df['qtr'] == qtr) &
-            (df['down'] == down) &
-            (df['game_seconds_remaining'].between(game_time - 600, game_time + 600)) &
-            (df['ydstogo'].between(ydstogo - 10, ydstogo + 10)) &
-            (df['yardline_100'].between(yardline - field_tolerance, yardline + field_tolerance)) &
-            (df['score_differential'].between(score_differential - 10, score_differential + 10))
-        ]
+            if len(filtered_df) >= 20:
+                break
 
         st.write(f"✅ FINAL KC PLAY COUNT: {len(filtered_df)}")
 
@@ -136,18 +129,23 @@ if df is not None:
             st.error("🚨 NOT ENOUGH KC PLAYS FOUND! TRY ADJUSTING FILTERS.")
             st.stop()
 
-        # ✅ Train Model **ONLY IF NOT ALREADY TRAINED**
-        if st.session_state["model_shotgun"] is None:
-            st.session_state["model_shotgun"] = train_xgb_model(filtered_df[filtered_df['shotgun'] == 1])
-
-        if st.session_state["model_no_shotgun"] is None:
-            st.session_state["model_no_shotgun"] = train_xgb_model(filtered_df[filtered_df['shotgun'] == 0])
-
-        model_shotgun = st.session_state["model_shotgun"]
-        model_no_shotgun = st.session_state["model_no_shotgun"]
+        # ✅ Train Models (cached)
+        model_shotgun = train_xgb_model(filtered_df, shotgun=1)
+        model_no_shotgun = train_xgb_model(filtered_df, shotgun=0)
 
         if model_shotgun is None or model_no_shotgun is None:
             st.error("🚨 MODEL TRAINING FAILED! TRY DIFFERENT FILTERS.")
             st.stop()
 
-        st.success("🚀 Prediction Complete!")  # ✅ Added for feedback
+        # ✅ Predictions
+        input_features = np.array([[qtr, game_time, down, ydstogo, yardline, score_differential]])
+        pass_shotgun = model_shotgun.predict_proba(input_features)[0][1] * 100
+        run_shotgun = 100 - pass_shotgun
+
+        pass_no_shotgun = model_no_shotgun.predict_proba(input_features)[0][1] * 100
+        run_no_shotgun = 100 - pass_no_shotgun
+
+        # ✅ Display Predictions
+        st.subheader("🔮 PREDICTION RESULTS:")
+        st.write(f"📌 **WITH SHOTGUN:** {pass_shotgun:.2f}% PASS, {run_shotgun:.2f}% RUN")
+        st.write(f"📌 **WITHOUT SHOTGUN:** {pass_no_shotgun:.2f}% PASS, {run_no_shotgun:.2f}% RUN")
