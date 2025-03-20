@@ -13,7 +13,7 @@ KC_2024_SCHEDULE = {
     12: "CAR", 13: "LV", 14: "LAC", 15: "CLE", 16: "HOU", 17: "PIT", 18: "DEN"
 }
 
-# ✅ Custom CSS for Theming
+# ✅ Custom CSS
 st.markdown("""
     <style>
         [data-testid="stSidebar"] { background-color: white !important; color: #01284a !important; }
@@ -26,7 +26,7 @@ st.markdown("""
 # ✅ Load Data Function (Cached)
 @st.cache_data
 def load_data():
-    """Fetches and processes KC-specific play-by-play data for 2020-2024."""
+    """Fetches and processes KC play-by-play data for 2020-2024."""
     st.write("📡 Fetching latest KC play data...")
     try:
         raw_data = load_nfl_pbp(seasons=[2020, 2021, 2022, 2023, 2024])
@@ -65,20 +65,29 @@ def load_data():
 # ✅ Load Data (Cached)
 df = load_data()
 
-# ✅ Cache the trained models
+# ✅ Train & Cache the Models **ONCE**
 @st.cache_resource
-def train_xgb_model(train_df, shotgun):
-    """Trains and caches an XGBoost model for a given shotgun status."""
-    subset = train_df[train_df['shotgun'] == shotgun]
-    X = subset[['qtr', 'game_seconds_remaining', 'down', 'ydstogo', 'yardline_100', 'score_differential']]
-    y = subset['play_type_encoded']
+def train_xgb_models(df):
+    """Trains XGBoost models for shotgun and non-shotgun plays and caches them."""
+    def train_xgb_model(train_df, shotgun):
+        subset = train_df[train_df['shotgun'] == shotgun]
+        X = subset[['qtr', 'game_seconds_remaining', 'down', 'ydstogo', 'yardline_100', 'score_differential']]
+        y = subset['play_type_encoded']
 
-    if len(y.unique()) < 2:
-        return None  # Not enough variation to train
+        if len(y.unique()) < 2:
+            return None  # Not enough variation to train
 
-    model = xgb.XGBClassifier(eval_metric="logloss")
-    model.fit(X, y)
-    return model
+        model = xgb.XGBClassifier(eval_metric="logloss")
+        model.fit(X, y)
+        return model
+
+    return {
+        "shotgun": train_xgb_model(df, shotgun=1),
+        "no_shotgun": train_xgb_model(df, shotgun=0)
+    }
+
+# ✅ Train Once, Cache Globally
+models = train_xgb_models(df)
 
 # ✅ Sidebar Layout
 if df is not None:
@@ -107,45 +116,21 @@ if df is not None:
     # ✅ Button to Trigger Prediction
     if st.sidebar.button("🔍 GET PREDICTION"):
         game_time = (minutes * 60) + seconds
-
-        # **Dynamic Search Expansion**
-        expansion_steps = [(5, 300, 5), (10, 600, 10), (15, 900, 15)]
-        for yards, time_adj, score_adj in expansion_steps:
-            filtered_df = df[
-                (df['qtr'] == qtr) &
-                (df['down'] == down) &
-                (df['game_seconds_remaining'].between(game_time - time_adj, game_time + time_adj)) &
-                (df['ydstogo'].between(ydstogo - yards, ydstogo + yards)) &
-                (df['yardline_100'].between(yardline - yards, yardline + yards)) &
-                (df['score_differential'].between(score_differential - score_adj, score_differential + score_adj))
-            ]
-
-            if len(filtered_df) >= 20:
-                break
-
-        st.write(f"✅ FINAL KC PLAY COUNT: {len(filtered_df)}")
-
-        if len(filtered_df) < 10:
-            st.error("🚨 NOT ENOUGH KC PLAYS FOUND! TRY ADJUSTING FILTERS.")
-            st.stop()
-
-        # ✅ Train Models (cached)
-        model_shotgun = train_xgb_model(filtered_df, shotgun=1)
-        model_no_shotgun = train_xgb_model(filtered_df, shotgun=0)
-
-        if model_shotgun is None or model_no_shotgun is None:
-            st.error("🚨 MODEL TRAINING FAILED! TRY DIFFERENT FILTERS.")
-            st.stop()
-
-        # ✅ Predictions
         input_features = np.array([[qtr, game_time, down, ydstogo, yardline, score_differential]])
-        pass_shotgun = model_shotgun.predict_proba(input_features)[0][1] * 100
-        run_shotgun = 100 - pass_shotgun
 
-        pass_no_shotgun = model_no_shotgun.predict_proba(input_features)[0][1] * 100
-        run_no_shotgun = 100 - pass_no_shotgun
+        model_shotgun = models["shotgun"]
+        model_no_shotgun = models["no_shotgun"]
 
-        # ✅ Display Predictions
-        st.subheader("🔮 PREDICTION RESULTS:")
-        st.write(f"📌 **WITH SHOTGUN:** {pass_shotgun:.2f}% PASS, {run_shotgun:.2f}% RUN")
-        st.write(f"📌 **WITHOUT SHOTGUN:** {pass_no_shotgun:.2f}% PASS, {run_no_shotgun:.2f}% RUN")
+        if model_shotgun and model_no_shotgun:
+            pass_shotgun = model_shotgun.predict_proba(input_features)[0][1] * 100
+            run_shotgun = 100 - pass_shotgun
+
+            pass_no_shotgun = model_no_shotgun.predict_proba(input_features)[0][1] * 100
+            run_no_shotgun = 100 - pass_no_shotgun
+
+            # ✅ Display Predictions
+            st.subheader("🔮 PREDICTION RESULTS:")
+            st.write(f"📌 **WITH SHOTGUN:** {pass_shotgun:.2f}% PASS, {run_shotgun:.2f}% RUN")
+            st.write(f"📌 **WITHOUT SHOTGUN:** {pass_no_shotgun:.2f}% PASS, {run_no_shotgun:.2f}% RUN")
+        else:
+            st.error("🚨 MODEL TRAINING FAILED! TRY DIFFERENT FILTERS.")
