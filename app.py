@@ -5,6 +5,51 @@ import numpy as np
 import polars as pl
 from sportsdataverse.nfl import load_nfl_pbp
 
+# ✅ Custom CSS - Adapts to Light & Dark Mode
+st.markdown("""
+    <style>
+        /* General font */
+        html, body, [class*="css"] {
+            font-family: 'Proxima Nova', sans-serif !important;
+        }
+
+        /* Sidebar */
+        [data-testid="stSidebar"] {
+            background-color: white !important;
+            color: #01284a !important; /* Default for light mode */
+        }
+
+        /* Sidebar (DARK MODE) */
+        @media (prefers-color-scheme: dark) {
+            [data-testid="stSidebar"] {
+                background-color: #1e1e1e !important;
+                color: #69b3f5 !important; /* Light blue for visibility */
+            }
+        }
+
+        /* Dropdowns & Sliders */
+        div[data-baseweb="select"] {
+            border: 1px solid #01284a !important;
+            border-radius: 5px !important;
+        }
+        
+        .stSlider > div > div {
+            color: #01284a !important;
+        }
+
+        /* Ensure Sidebar Headers are visible in Dark Mode */
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] h4,
+        [data-testid="stSidebar"] h5,
+        [data-testid="stSidebar"] h6 {
+            color: inherit !important;  /* Adapts to mode */
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+
 # ✅ 2024 Opponent Schedule with Game Week Mapping (Updated)
 KC_2024_SCHEDULE = {
     1: "BAL", 2: "CIN", 3: "ATL", 4: "LAC", 5: "NO",
