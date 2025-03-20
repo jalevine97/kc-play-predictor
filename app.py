@@ -13,16 +13,14 @@ KC_2024_SCHEDULE = {
     12: "CAR", 13: "LV", 14: "LAC", 15: "CLE", 16: "HOU", 17: "PIT", 18: "DEN"
 }
 
-# ✅ Custom CSS
+# ✅ Custom CSS for Theming
 st.markdown("""
     <style>
         [data-testid="stSidebar"] { background-color: white !important; color: #01284a !important; }
         div[data-baseweb="select"] { border: 1px solid #01284a !important; border-radius: 5px !important; }
         .stSlider > div > div { color: #01284a !important; }
         html, body, [class*="css"] { font-family: 'Proxima Nova', sans-serif; }
-        .stMarkdown h2 { color: #01284a; }
-        .stMarkdown h3 { color: #01284a; }
-        .stMarkdown p { color: #01284a; }
+        .stMarkdown h2, .stMarkdown h3, .stMarkdown p { color: #01284a; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -68,12 +66,12 @@ def load_data():
 # ✅ Load Data (Ensure df is defined BEFORE using it)
 df = load_data()
 
-# ✅ Train & Cache the Models **ONCE**
+# ✅ Train & Cache the Models **Only When Needed**
 @st.cache_resource
-def train_xgb_models(df):
+def train_xgb_models(train_df):
     """Trains XGBoost models for shotgun and non-shotgun plays and caches them."""
-    def train_xgb_model(train_df, shotgun):
-        subset = train_df[train_df['shotgun'] == shotgun]
+    def train_xgb_model(subset_df, shotgun):
+        subset = subset_df[subset_df['shotgun'] == shotgun]
         X = subset[['qtr', 'game_seconds_remaining', 'down', 'ydstogo', 'yardline_100', 'score_differential']]
         y = subset['play_type_encoded']
 
@@ -85,12 +83,9 @@ def train_xgb_models(df):
         return model
 
     return {
-        "shotgun": train_xgb_model(df, shotgun=1),
-        "no_shotgun": train_xgb_model(df, shotgun=0)
+        "shotgun": train_xgb_model(train_df, shotgun=1),
+        "no_shotgun": train_xgb_model(train_df, shotgun=0)
     }
-
-# ✅ Train Once, Cache Globally
-models = train_xgb_models(df)
 
 # ✅ Sidebar Layout
 if df is not None:
@@ -119,15 +114,18 @@ if df is not None:
             # ✅ Add "GET PREDICTION" Button Inside Sidebar
             submit = st.button("🔍 GET PREDICTION")
 
-    if submit:  # ✅ Ensures prediction logic only runs after button click
-        game_time = (minutes * 60) + seconds
-        input_features = np.array([[qtr, game_time, down, ydstogo, yardline, score_differential]])
+    if submit:  # ✅ Ensures model training happens only after clicking "Get Prediction"
+        with st.spinner("🔄 Training models... Please wait."):
+            models = train_xgb_models(df)
 
         model_shotgun = models["shotgun"]
         model_no_shotgun = models["no_shotgun"]
 
         if model_shotgun and model_no_shotgun:
             # ✅ Generate Predictions
+            game_time = (minutes * 60) + seconds
+            input_features = np.array([[qtr, game_time, down, ydstogo, yardline, score_differential]])
+
             pass_shotgun = model_shotgun.predict_proba(input_features)[0][1] * 100
             run_shotgun = 100 - pass_shotgun
 
