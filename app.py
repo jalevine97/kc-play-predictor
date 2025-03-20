@@ -5,19 +5,26 @@ import numpy as np
 import polars as pl
 from sportsdataverse.nfl import load_nfl_pbp
 
-# ✅ Opponent Defensive Data - (Example Placeholder Data)
-OPPONENT_DEFENSE_STATS = {
-    "BAL": {"epa_per_play": -0.12, "run_def_rank": 2, "blitz_rate": 35},
-    "CIN": {"epa_per_play": -0.08, "run_def_rank": 12, "blitz_rate": 20},
-    "ATL": {"epa_per_play": 0.05, "run_def_rank": 28, "blitz_rate": 18},
-    "LAC": {"epa_per_play": -0.02, "run_def_rank": 20, "blitz_rate": 30},
-    "NO": {"epa_per_play": -0.10, "run_def_rank": 5, "blitz_rate": 33},
-    # More teams can be added...
+# ✅ 2024 Opponent Schedule with Game Week Mapping (Updated)
+KC_2024_SCHEDULE = {
+    1: "BAL", 2: "CIN", 3: "ATL", 4: "LAC", 5: "NO",
+    6: "BYE",  # Week 6 Bye
+    7: "SF", 8: "LV", 9: "TB", 10: "DEN", 11: "BUF",
+    12: "CAR", 13: "LV", 14: "LAC", 15: "CLE", 16: "HOU", 17: "PIT", 18: "DEN"
 }
 
-# ✅ Function to Fetch Opponent Data
-def get_opponent_defense_stats(opponent):
-    return OPPONENT_DEFENSE_STATS.get(opponent, {"epa_per_play": 0, "run_def_rank": 16, "blitz_rate": 25})
+# ✅ Custom CSS
+st.markdown("""
+    <style>
+        [data-testid="stSidebar"] { background-color: white !important; color: #01284a !important; }
+        div[data-baseweb="select"] { border: 1px solid #01284a !important; border-radius: 5px !important; }
+        .stSlider > div > div { color: #01284a !important; }
+        html, body, [class*="css"] { font-family: 'Proxima Nova', sans-serif; }
+        .stMarkdown h2 { color: #01284a; }
+        .stMarkdown h3 { color: #01284a; }
+        .stMarkdown p { color: #01284a; }
+    </style>
+""", unsafe_allow_html=True)
 
 # ✅ Load Data Function (Cached)
 @st.cache_data
@@ -58,7 +65,7 @@ def load_data():
         st.error(f"🚨 Failed to load data: {e}")
         return None
 
-# ✅ Load Data (Cached)
+# ✅ Load Data (Ensure df is defined BEFORE using it)
 df = load_data()
 
 # ✅ Train & Cache the Models **ONCE**
@@ -99,13 +106,20 @@ if df is not None:
             st.warning("🚨 KANSAS CITY HAS A BYE IN WEEK 6. SELECT ANOTHER WEEK.")
         else:
             st.markdown(f"### 🏈 OPPONENT: **{opponent}**")
-            opponent_stats = get_opponent_defense_stats(opponent)
-            st.write(f"🛡️ **Defense EPA:** {opponent_stats['epa_per_play']}")
-            st.write(f"🚀 **Blitz Rate:** {opponent_stats['blitz_rate']}%")
-            st.write(f"🏈 **Run Defense Rank:** {opponent_stats['run_def_rank']}")
 
-    # ✅ Button to Trigger Prediction
-    if st.sidebar.button("🔍 GET PREDICTION"):
+            # 🏈 **Game Situation Inputs**
+            qtr = st.selectbox("SELECT QUARTER", [1, 2, 3, 4], index=2)
+            minutes = st.selectbox("MINUTES REMAINING", list(range(15, -1, -1)), index=1)
+            seconds = st.slider("SECONDS REMAINING", min_value=0, max_value=59, value=14)
+            down = st.selectbox("DOWN", [1, 2, 3, 4], index=0)
+            ydstogo = st.slider("YARDS TO GO", min_value=1, max_value=30, value=10)
+            yardline = st.slider("FIELD POSITION (0-50 KC SIDE, 50-100 OPPONENT SIDE)", 1, 99, 20)
+            score_differential = st.slider("SCORE DIFFERENTIAL (KC - OPPONENT)", -30, 30, 4)
+
+            # ✅ Add "GET PREDICTION" Button Inside Sidebar
+            submit = st.button("🔍 GET PREDICTION")
+
+    if submit:  # ✅ Ensures prediction logic only runs after button click
         game_time = (minutes * 60) + seconds
         input_features = np.array([[qtr, game_time, down, ydstogo, yardline, score_differential]])
 
@@ -113,6 +127,7 @@ if df is not None:
         model_no_shotgun = models["no_shotgun"]
 
         if model_shotgun and model_no_shotgun:
+            # ✅ Generate Predictions
             pass_shotgun = model_shotgun.predict_proba(input_features)[0][1] * 100
             run_shotgun = 100 - pass_shotgun
 
