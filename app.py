@@ -3,8 +3,8 @@ import pandas as pd
 import xgboost as xgb
 import numpy as np
 import polars as pl
-from sportsdataverse.nfl import load_nfl_pbp
 import os
+from sportsdataverse.nfl import load_nfl_pbp
 
 # ✅ 2024 Opponent Schedule
 KC_2024_SCHEDULE = {
@@ -13,181 +13,150 @@ KC_2024_SCHEDULE = {
     12: "CAR", 13: "LV", 14: "LAC", 15: "CLE", 16: "HOU", 17: "PIT", 18: "DEN"
 }
 
-# ✅ Adaptive CSS for Dark and Light Modes
+# ✅ Optimized CSS for Light & Dark Mode
 st.markdown("""
     <style>
         html, body, [class*="css"] {
-            font-family: 'Proxima Nova', sans-serif;
+            font-family: 'Proxima Nova', sans-serif !important;
         }
 
         /* Sidebar styles */
         [data-testid="stSidebar"] {
             background-color: white;
+            border-right: 1px solid #ddd;
         }
 
-        /* Text styles */
-        .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4,
-        .stMarkdown h5, .stMarkdown h6, .stMarkdown p, .stText, .stTitle, .stSubheader {
-            color: var(--text-color);
-        }
-
-        /* Dropdown, slider, and widget borders */
-        div[data-baseweb="select"], .stSlider > div > div {
-            border: 1px solid #01284a !important;
+        /* Widget border fix */
+        div[data-baseweb="select"] *, .stSlider > div > div {
             border-radius: 5px !important;
         }
 
-        /* Set theme-aware text color */
+        /* Text styling */
+        h1, h2, h3, h4, h5, h6, p, .stText, .stTitle, .stSubheader {
+            color: inherit !important;
+        }
+
+        /* Dark mode override */
         @media (prefers-color-scheme: dark) {
             html, body, [class*="css"] {
-                color: #e0e0e0;
-                background-color: #0e1117;
+                background-color: #0e1117 !important;
+                color: #e0e0e0 !important;
             }
-
             [data-testid="stSidebar"] {
                 background-color: #0e1117 !important;
+                border-right: 1px solid #333;
+            }
+            div[data-baseweb="select"] *, .stSlider > div > div {
+                background-color: #1e1e1e !important;
+                color: #e0e0e0 !important;
             }
         }
 
+        /* Light mode override */
         @media (prefers-color-scheme: light) {
             html, body, [class*="css"] {
-                color: #01284a;
+                background-color: white !important;
+                color: #01284a !important;
             }
         }
     </style>
 """, unsafe_allow_html=True)
 
-# ✅ Load Data Function
+# ✅ Load and preprocess data
 @st.cache_data
 def load_data():
-    st.write("📡 Fetching latest KC play data...")
-    try:
-        raw_data = load_nfl_pbp(seasons=[2020, 2021, 2022, 2023, 2024])
-        df = raw_data.to_pandas() if isinstance(raw_data, pl.DataFrame) else None
-        if df is None:
-            st.error("🚨 Unexpected data format received.")
-            return None
-
-        cols = ['season', 'week', 'qtr', 'game_seconds_remaining', 'down',
-                'ydstogo', 'yardline_100', 'score_differential', 'play_type',
-                'shotgun', 'defteam', 'posteam']
-        df = df[cols].dropna()
-
-        numeric_cols = ['qtr', 'shotgun', 'game_seconds_remaining', 'ydstogo', 'yardline_100', 'score_differential']
-        df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce').fillna(0).astype(int)
-
-        df['play_type_encoded'] = df['play_type'].apply(lambda x: 1 if x == "pass" else 0)
-        df = df[df['posteam'] == "KC"]
-
-        df_2024 = df[df['season'] == 2024]
-        df = pd.concat([df, df_2024, df_2024, df_2024], ignore_index=True)
-
-        st.write(f"✅ Successfully loaded {len(df)} KC plays from 2020-2024.")
-        return df
-
-    except Exception as e:
-        st.error(f"🚨 Failed to load data: {e}")
+    raw_data = load_nfl_pbp(seasons=[2020, 2021, 2022, 2023, 2024])
+    df = raw_data.to_pandas() if isinstance(raw_data, pl.DataFrame) else None
+    if df is None:
         return None
+    df = df[['season','week','qtr','game_seconds_remaining','down','ydstogo',
+             'yardline_100','score_differential','play_type','shotgun','defteam','posteam']].dropna()
+    df[['qtr','shotgun','game_seconds_remaining','ydstogo','yardline_100','score_differential']] = \
+        df[['qtr','shotgun','game_seconds_remaining','ydstogo','yardline_100','score_differential']] \
+        .apply(pd.to_numeric, errors='coerce').fillna(0).astype(int)
+    df['play_type_encoded'] = df['play_type'].apply(lambda x: 1 if x == "pass" else 0)
+    df = df[df['posteam'] == "KC"]
+    df_2024 = df[df['season'] == 2024]
+    return pd.concat([df, df_2024, df_2024, df_2024], ignore_index=True)
 
 df = load_data()
 
-# ✅ Check if Model Files Exist
-model_shotgun_path = "model_shotgun.json"
-model_no_shotgun_path = "model_no_shotgun.json"
-
-# ✅ Train and Save Models if Not Found
-@st.cache_resource
-def train_xgb_models(train_df):
-    def train_model(df, shotgun, filename):
+# ✅ Load or train model
+def load_or_train_models(df):
+    def train(df, shotgun, path):
         subset = df[df['shotgun'] == shotgun]
-        X = subset[['qtr', 'game_seconds_remaining', 'down', 'ydstogo', 'yardline_100', 'score_differential']]
+        X = subset[['qtr','game_seconds_remaining','down','ydstogo','yardline_100','score_differential']]
         y = subset['play_type_encoded']
-
-        st.write(f"🔍 Training {'shotgun' if shotgun else 'no-shotgun'} model... ({len(subset)} plays)")
-        st.write(f"📊 Label breakdown: {y.value_counts().to_dict()}")
-
-        if len(y.unique()) < 2:
-            st.warning(f"⚠️ Not enough variation in {'shotgun' if shotgun else 'no-shotgun'} plays. Skipping model.")
-            return None
-
-        model = xgb.XGBClassifier(eval_metric="logloss")
+        model = xgb.XGBClassifier(eval_metric='logloss')
         model.fit(X, y)
-        model.save_model(filename)
+        model.save_model(path)
         return model
 
-    # Paths to model files
-    model_shotgun_path = "model_shotgun.json"
-    model_no_shotgun_path = "model_no_shotgun.json"
-
-    models = {}
-
-    # Try loading pre-trained models
-    if os.path.exists(model_shotgun_path):
-        try:
-            model = xgb.XGBClassifier()
-            model.load_model(model_shotgun_path)
-            models["shotgun"] = model
-            st.write("✅ Loaded saved shotgun model.")
-        except Exception as e:
-            st.warning(f"⚠️ Could not load shotgun model: {e}")
-            models["shotgun"] = None
+    if os.path.exists("model_shotgun.json") and os.path.exists("model_no_shotgun.json"):
+        m1, m2 = xgb.XGBClassifier(), xgb.XGBClassifier()
+        m1.load_model("model_shotgun.json")
+        m2.load_model("model_no_shotgun.json")
     else:
-        models["shotgun"] = train_model(train_df, shotgun=1, filename=model_shotgun_path)
+        m1 = train(df, 1, "model_shotgun.json")
+        m2 = train(df, 0, "model_no_shotgun.json")
+    return {'shotgun': m1, 'no_shotgun': m2}
 
-    if os.path.exists(model_no_shotgun_path):
-        try:
-            model = xgb.XGBClassifier()
-            model.load_model(model_no_shotgun_path)
-            models["no_shotgun"] = model
-            st.write("✅ Loaded saved no-shotgun model.")
-        except Exception as e:
-            st.warning(f"⚠️ Could not load no-shotgun model: {e}")
-            models["no_shotgun"] = None
+models = load_or_train_models(df)
+
+# ✅ Sidebar Inputs
+with st.sidebar:
+    st.image("Eaglelogo2color.jpg", width=250)
+    st.title("📊 PLAY PREDICTOR - KC CHIEFS")
+    week = st.selectbox("SELECT GAME WEEK", list(KC_2024_SCHEDULE.keys()), index=7)
+    opponent = KC_2024_SCHEDULE[week]
+    if opponent != "BYE":
+        st.markdown(f"### 🏈 OPPONENT: **{opponent}**")
+    qtr = st.selectbox("SELECT QUARTER", [1, 2, 3, 4], index=2)
+    minutes = st.selectbox("MINUTES REMAINING", list(range(15, -1, -1)), index=1)
+    seconds = st.slider("SECONDS REMAINING", 0, 59, 14)
+    down = st.selectbox("DOWN", [1, 2, 3, 4], index=0)
+    ydstogo = st.slider("YARDS TO GO", 1, 30, 10)
+    yardline = st.slider("FIELD POSITION", 1, 99, 20)
+    score_diff = st.slider("SCORE DIFF (KC - OPP)", -30, 30, 4)
+    go = st.button("🔍 GET PREDICTION")
+
+# ✅ Prediction & Confidence
+if go and opponent != "BYE":
+    game_time = (minutes * 60) + seconds
+    X_input = np.array([[qtr, game_time, down, ydstogo, yardline, score_diff]])
+    shotgun = models['shotgun']
+    no_shotgun = models['no_shotgun']
+
+    def get_confidence(pred): return abs(pred - 50) * 2
+
+    def similar_context(df, X_input):
+        input_series = pd.Series(X_input[0], index=['qtr','game_seconds_remaining','down','ydstogo','yardline_100','score_differential'])
+        diffs = df[['qtr','game_seconds_remaining','down','ydstogo','yardline_100','score_differential']].sub(input_series)
+        distance = np.sqrt((diffs ** 2).sum(axis=1))
+        similar = df[distance < 150]
+        return len(similar), similar[['ydstogo', 'yardline_100', 'score_differential']].mean().to_dict()
+
+    if shotgun and no_shotgun:
+        ps = shotgun.predict_proba(X_input)[0][1] * 100
+        rs = 100 - ps
+        pn = no_shotgun.predict_proba(X_input)[0][1] * 100
+        rn = 100 - pn
+
+        conf_s = get_confidence(ps)
+        conf_n = get_confidence(pn)
+
+        count_s, avg_s = similar_context(df[df['shotgun'] == 1], X_input)
+        count_n, avg_n = similar_context(df[df['shotgun'] == 0], X_input)
+
+        st.subheader("🔮 PREDICTION RESULTS")
+        st.write(f"📌 **WITH SHOTGUN:** {ps:.2f}% PASS / {rs:.2f}% RUN")
+        st.write(f"✅ Confidence: {conf_s:.2f}% | 📚 Similar plays: {count_s}")
+        st.write(f"📎 Context Avg — YTG: {avg_s['ydstogo']:.1f}, YL: {avg_s['yardline_100']:.1f}, SD: {avg_s['score_differential']:.1f}")
+
+        st.write("---")
+
+        st.write(f"📌 **WITHOUT SHOTGUN:** {pn:.2f}% PASS / {rn:.2f}% RUN")
+        st.write(f"✅ Confidence: {conf_n:.2f}% | 📚 Similar plays: {count_n}")
+        st.write(f"📎 Context Avg — YTG: {avg_n['ydstogo']:.1f}, YL: {avg_n['yardline_100']:.1f}, SD: {avg_n['score_differential']:.1f}")
     else:
-        models["no_shotgun"] = train_model(train_df, shotgun=0, filename=model_no_shotgun_path)
-
-    return models
-
-# ✅ Load models once
-models = train_xgb_models(df)
-
-# ✅ Sidebar Layout
-if df is not None:
-    with st.sidebar:
-        st.image("Eaglelogo2color.jpg", width=250)
-        st.title("📊 PLAY PREDICTOR - KC CHIEFS")
-        week = st.selectbox("SELECT GAME WEEK", list(KC_2024_SCHEDULE.keys()), index=7)
-        opponent = KC_2024_SCHEDULE[week]
-
-        if opponent == "BYE":
-            st.warning("🚨 BYE WEEK. SELECT ANOTHER.")
-        else:
-            st.markdown(f"### 🏈 OPPONENT: **{opponent}**")
-            qtr = st.selectbox("SELECT QUARTER", [1, 2, 3, 4], index=2)
-            minutes = st.selectbox("MINUTES REMAINING", list(range(15, -1, -1)), index=1)
-            seconds = st.slider("SECONDS REMAINING", 0, 59, 14)
-            down = st.selectbox("DOWN", [1, 2, 3, 4], index=0)
-            ydstogo = st.slider("YARDS TO GO", 1, 30, 10)
-            yardline = st.slider("FIELD POSITION", 1, 99, 20)
-            score_differential = st.slider("SCORE DIFF (KC - OPP)", -30, 30, 4)
-            submit = st.button("🔍 GET PREDICTION")
-
-    if submit:
-        game_time = (minutes * 60) + seconds
-        input_data = np.array([[qtr, game_time, down, ydstogo, yardline, score_differential]])
-
-        model_shotgun = models["shotgun"]
-        model_no_shotgun = models["no_shotgun"]
-
-        if model_shotgun and model_no_shotgun:
-            pass_shotgun = model_shotgun.predict_proba(input_data)[0][1] * 100
-            run_shotgun = 100 - pass_shotgun
-
-            pass_no_shotgun = model_no_shotgun.predict_proba(input_data)[0][1] * 100
-            run_no_shotgun = 100 - pass_no_shotgun
-
-            st.subheader("🔮 PREDICTION RESULTS:")
-            st.write(f"📌 **WITH SHOTGUN:** {pass_shotgun:.2f}% PASS, {run_shotgun:.2f}% RUN")
-            st.write(f"📌 **WITHOUT SHOTGUN:** {pass_no_shotgun:.2f}% PASS, {run_no_shotgun:.2f}% RUN")
-        else:
-            st.error("🚨 MODEL TRAINING FAILED.")
+        st.error("🚨 MODEL LOAD FAILED.")
