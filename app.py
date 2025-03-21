@@ -13,14 +13,47 @@ KC_2024_SCHEDULE = {
     12: "CAR", 13: "LV", 14: "LAC", 15: "CLE", 16: "HOU", 17: "PIT", 18: "DEN"
 }
 
-# ✅ Custom CSS
+# ✅ Adaptive CSS for Dark and Light Modes
 st.markdown("""
     <style>
-        [data-testid="stSidebar"] { background-color: white !important; color: #01284a !important; }
-        div[data-baseweb="select"] { border: 1px solid #01284a !important; border-radius: 5px !important; }
-        .stSlider > div > div { color: #01284a !important; }
-        html, body, [class*="css"] { font-family: 'Proxima Nova', sans-serif; }
-        .stMarkdown h2, .stMarkdown h3, .stMarkdown p { color: #01284a; }
+        html, body, [class*="css"] {
+            font-family: 'Proxima Nova', sans-serif;
+        }
+
+        /* Sidebar styles */
+        [data-testid="stSidebar"] {
+            background-color: white;
+        }
+
+        /* Text styles */
+        .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4,
+        .stMarkdown h5, .stMarkdown h6, .stMarkdown p, .stText, .stTitle, .stSubheader {
+            color: var(--text-color);
+        }
+
+        /* Dropdown, slider, and widget borders */
+        div[data-baseweb="select"], .stSlider > div > div {
+            border: 1px solid #01284a !important;
+            border-radius: 5px !important;
+        }
+
+        /* Set theme-aware text color */
+        @media (prefers-color-scheme: dark) {
+            html, body, [class*="css"] {
+                color: #e0e0e0;
+                background-color: #0e1117;
+            }
+
+            [data-testid="stSidebar"] {
+                background-color: #0e1117 !important;
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            html, body, [class*="css"] {
+                color: #01284a;
+            }
+        }
     </style>
 """, unsafe_allow_html=True)
 
