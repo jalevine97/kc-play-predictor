@@ -13,11 +13,7 @@ KC_2024_SCHEDULE = {
     12: "CAR", 13: "LV", 14: "LAC", 15: "CLE", 16: "HOU", 17: "PIT", 18: "DEN"
 }
 
-<<<<<<< HEAD
-# ✅ Custom CSS for Theming
-=======
-# ✅ CSS Theming
->>>>>>> 550454e (🚀 Add trained models and updated app.py for faster predictions)
+# ✅ Custom CSS
 st.markdown("""
     <style>
         [data-testid="stSidebar"] { background-color: white !important; color: #01284a !important; }
@@ -62,24 +58,23 @@ def load_data():
 
 df = load_data()
 
-<<<<<<< HEAD
-# ✅ Train & Cache the Models **Only When Needed**
-@st.cache_resource
-def train_xgb_models(train_df):
-    """Trains XGBoost models for shotgun and non-shotgun plays and caches them."""
-    def train_xgb_model(subset_df, shotgun):
-        subset = subset_df[subset_df['shotgun'] == shotgun]
-=======
-# ✅ Train and Save Models
+# ✅ Check if Model Files Exist
+model_shotgun_path = "model_shotgun.json"
+model_no_shotgun_path = "model_no_shotgun.json"
+
+# ✅ Train and Save Models if Not Found
 @st.cache_resource
 def train_xgb_models(train_df):
     def train_model(df, shotgun, filename):
         subset = df[df['shotgun'] == shotgun]
->>>>>>> 550454e (🚀 Add trained models and updated app.py for faster predictions)
         X = subset[['qtr', 'game_seconds_remaining', 'down', 'ydstogo', 'yardline_100', 'score_differential']]
         y = subset['play_type_encoded']
 
+        st.write(f"🔍 Training {'shotgun' if shotgun else 'no-shotgun'} model... ({len(subset)} plays)")
+        st.write(f"📊 Label breakdown: {y.value_counts().to_dict()}")
+
         if len(y.unique()) < 2:
+            st.warning(f"⚠️ Not enough variation in {'shotgun' if shotgun else 'no-shotgun'} plays. Skipping model.")
             return None
 
         model = xgb.XGBClassifier(eval_metric="logloss")
@@ -87,22 +82,43 @@ def train_xgb_models(train_df):
         model.save_model(filename)
         return model
 
-<<<<<<< HEAD
-    return {
-        "shotgun": train_xgb_model(train_df, shotgun=1),
-        "no_shotgun": train_xgb_model(train_df, shotgun=0)
-    }
+    # Paths to model files
+    model_shotgun_path = "model_shotgun.json"
+    model_no_shotgun_path = "model_no_shotgun.json"
 
-# ✅ Sidebar Layout
-=======
-    shotgun_model = train_model(train_df, shotgun=1, filename="model_shotgun.json")
-    no_shotgun_model = train_model(train_df, shotgun=0, filename="model_no_shotgun.json")
-    return {"shotgun": shotgun_model, "no_shotgun": no_shotgun_model}
+    models = {}
 
+    # Try loading pre-trained models
+    if os.path.exists(model_shotgun_path):
+        try:
+            model = xgb.XGBClassifier()
+            model.load_model(model_shotgun_path)
+            models["shotgun"] = model
+            st.write("✅ Loaded saved shotgun model.")
+        except Exception as e:
+            st.warning(f"⚠️ Could not load shotgun model: {e}")
+            models["shotgun"] = None
+    else:
+        models["shotgun"] = train_model(train_df, shotgun=1, filename=model_shotgun_path)
+
+    if os.path.exists(model_no_shotgun_path):
+        try:
+            model = xgb.XGBClassifier()
+            model.load_model(model_no_shotgun_path)
+            models["no_shotgun"] = model
+            st.write("✅ Loaded saved no-shotgun model.")
+        except Exception as e:
+            st.warning(f"⚠️ Could not load no-shotgun model: {e}")
+            models["no_shotgun"] = None
+    else:
+        models["no_shotgun"] = train_model(train_df, shotgun=0, filename=model_no_shotgun_path)
+
+    return models
+
+# ✅ Load models once
 models = train_xgb_models(df)
 
-# ✅ UI & Prediction
->>>>>>> 550454e (🚀 Add trained models and updated app.py for faster predictions)
+# ✅ Sidebar Layout
 if df is not None:
     with st.sidebar:
         st.image("Eaglelogo2color.jpg", width=250)
@@ -123,29 +139,15 @@ if df is not None:
             score_differential = st.slider("SCORE DIFF (KC - OPP)", -30, 30, 4)
             submit = st.button("🔍 GET PREDICTION")
 
-<<<<<<< HEAD
-    if submit:  # ✅ Ensures model training happens only after clicking "Get Prediction"
-        with st.spinner("🔄 Training models... Please wait."):
-            models = train_xgb_models(df)
-=======
     if submit:
         game_time = (minutes * 60) + seconds
         input_data = np.array([[qtr, game_time, down, ydstogo, yardline, score_differential]])
->>>>>>> 550454e (🚀 Add trained models and updated app.py for faster predictions)
 
         model_shotgun = models["shotgun"]
         model_no_shotgun = models["no_shotgun"]
 
         if model_shotgun and model_no_shotgun:
-<<<<<<< HEAD
-            # ✅ Generate Predictions
-            game_time = (minutes * 60) + seconds
-            input_features = np.array([[qtr, game_time, down, ydstogo, yardline, score_differential]])
-
-            pass_shotgun = model_shotgun.predict_proba(input_features)[0][1] * 100
-=======
             pass_shotgun = model_shotgun.predict_proba(input_data)[0][1] * 100
->>>>>>> 550454e (🚀 Add trained models and updated app.py for faster predictions)
             run_shotgun = 100 - pass_shotgun
 
             pass_no_shotgun = model_no_shotgun.predict_proba(input_data)[0][1] * 100
